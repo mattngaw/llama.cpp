@@ -108,6 +108,7 @@ enum llama_example {
     LLAMA_EXAMPLE_FIT_PARAMS,
     LLAMA_EXAMPLE_RESULTS,
     LLAMA_EXAMPLE_EXPORT_GRAPH_OPS,
+    LLAMA_EXAMPLE_GRAPH_VIZ,
 
     LLAMA_EXAMPLE_COUNT,
 };
@@ -544,6 +545,7 @@ struct common_params {
     bool no_extra_bufts    = false; // disable extra buffer types (used for weight repacking)
     bool no_host           = false; // bypass host buffer allowing extra buffers to be used
 
+    bool graph_full        = false; // graph-viz: emit full unrolled graph
     bool single_turn       = false; // single turn chat conversation
 
     ggml_type cache_type_k = GGML_TYPE_F16; // KV cache data type for the K
