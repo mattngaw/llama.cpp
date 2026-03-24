@@ -442,6 +442,66 @@ static void graph_dump_dot_collapsed(ggml_cgraph * gf, const char * filename) {
         }
     }
 
+    // ---- invariant checks: verify collapsing preserves all connectivity ----
+    {
+        int edge_violations = 0;
+        int node_violations = 0;
+        int raw_edges_checked = 0;
+
+        // 1. Edge preservation: every raw edge must map to a collapsed edge
+        //    or have both endpoints in the same equivalence class.
+        for (int i = 0; i < n; i++) {
+            ggml_tensor * t = ggml_graph_node(gf, i);
+            for (int j = 0; j < GGML_MAX_SRC; j++) {
+                ggml_tensor * src = t->src[j];
+                if (!src) break;
+                raw_edges_checked++;
+
+                ggml_tensor * src_r = resolve(get_canon(src));
+                ggml_tensor * dst_r = resolve(get_canon(t));
+
+                if (src_r == dst_r) continue;
+
+                if (!edges.count({ src_r, dst_r })) {
+                    LOG_ERR("%s: edge preservation violation: %s -> %s "
+                            "(resolved %p -> %p) not in collapsed edge set\n",
+                            __func__, src->name, t->name,
+                            (const void *)src_r, (const void *)dst_r);
+                    edge_violations++;
+                }
+            }
+        }
+
+        // 2. Node coverage: every raw node must map to a canonical representative
+        //    that is either in pre_nodes, layer0_nodes, or post_nodes (and not
+        //    collapsed away without a valid redirect target).
+        tensor_set all_output_nodes;
+        for (auto * t : pre_nodes)    { if (!collapsed_nodes.count(t)) all_output_nodes.insert(t); }
+        for (auto * t : layer0_nodes) { if (!collapsed_nodes.count(t)) all_output_nodes.insert(t); }
+        for (auto * t : post_nodes)   { if (!collapsed_nodes.count(t) && !promoted_to_layer.count(t)) all_output_nodes.insert(t); }
+        // promoted nodes are in layer0_nodes, add them too
+        for (auto * t : promoted_to_layer) { if (!collapsed_nodes.count(t)) all_output_nodes.insert(t); }
+
+        for (int i = 0; i < n; i++) {
+            ggml_tensor * t = ggml_graph_node(gf, i);
+            ggml_tensor * rep = resolve(get_canon(t));
+            if (!all_output_nodes.count(rep)) {
+                LOG_ERR("%s: node coverage violation: %s (resolved to %p) "
+                        "has no representative in output node sets\n",
+                        __func__, t->name, (const void *)rep);
+                node_violations++;
+            }
+        }
+
+        if (edge_violations > 0 || node_violations > 0) {
+            LOG_ERR("%s: invariant check FAILED: %d edge violations, %d node violations\n",
+                    __func__, edge_violations, node_violations);
+        } else {
+            LOG_INF("%s: invariant check passed (%d raw edges verified, %d raw nodes verified)\n",
+                    __func__, raw_edges_checked, n);
+        }
+    }
+
     // ---- collect canonical leaves ----
 
     tensor_set emitted_leaves;
